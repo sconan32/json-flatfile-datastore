@@ -31,11 +31,13 @@ namespace JsonFlatFileDataStore
 
         private JObject _jsonData;
         private bool _executingJsonUpdate;
-
-        public DataStore(string path, bool useLowerCamelCase = true, string keyProperty = null, bool reloadBeforeGetCollection = false)
+        private bool _ignoreVirtualProperty;
+        private JsonSerializer _efJsonSerializer = new JsonSerializer() { ContractResolver = new EFContractResolver(), ReferenceLoopHandling = ReferenceLoopHandling.Ignore, Formatting = Formatting.Indented };
+        public DataStore(string path, bool useLowerCamelCase = true, string keyProperty = null, bool reloadBeforeGetCollection = false, bool ignoreVirtualProperty = true)
         {
             _filePath = path;
 
+            _ignoreVirtualProperty = ignoreVirtualProperty;
             _toJsonFunc = useLowerCamelCase
                         ? new Func<JObject, string>(data =>
                         {
@@ -164,7 +166,7 @@ namespace JsonFlatFileDataStore
 
             if (token == null)
             {
-                if (Nullable.GetUnderlyingType(typeof(T)) != null)
+                if (!typeof(T).IsValueType)
                 {
                     return default(T);
                 }
@@ -202,7 +204,15 @@ namespace JsonFlatFileDataStore
                 if (_jsonData[key] != null)
                     return (false, _jsonData);
 
-                _jsonData[key] = JToken.FromObject(item);
+                if (_ignoreVirtualProperty)
+                {
+                    _jsonData[key] = JToken.FromObject(item, _efJsonSerializer);
+                }
+                else
+                {
+                    _jsonData[key] = JToken.FromObject(item);
+                }
+
                 return (true, _jsonData);
             }
 
