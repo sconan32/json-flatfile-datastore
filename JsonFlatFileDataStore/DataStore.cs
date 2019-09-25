@@ -390,7 +390,7 @@ namespace JsonFlatFileDataStore
 
                 if (success)
                 {
-                    currentJson[dataPath] = JArray.FromObject(selectedData);
+                    currentJson[dataPath] = JArray.FromObject(selectedData,_efJsonSerializer);
                     updatedJson = _toJsonFunc(currentJson);
                 }
 

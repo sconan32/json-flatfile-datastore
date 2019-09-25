@@ -16,7 +16,12 @@ namespace JsonFlatFileDataStore
         private readonly Func<string, Func<List<T>, bool>, bool, Task<bool>> _commit;
         private readonly Func<T, T> _insertConvert;
         private readonly Func<T> _createNewInstance;
-
+        private readonly JsonSerializerSettings _serializerSettings = new JsonSerializerSettings()
+        {
+            ContractResolver = new EFContractResolver(),
+            ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+            Formatting = Formatting.Indented
+        };
         public DocumentCollection(Func<string, Func<List<T>, bool>, bool, Task<bool>> commit, Lazy<List<T>> data, string path, string idField, Func<T, T> insertConvert, Func<T> createNewInstance)
         {
             _path = path;
@@ -381,41 +386,49 @@ namespace JsonFlatFileDataStore
 
         private dynamic GetNextIdValue(List<T> data, T item = default(T))
         {
+            if (item != null)
+            {
+                dynamic primaryKeyValue = GetFieldValue(item, _idField);
+
+                if (primaryKeyValue != null)
+                {
+                    // Without casting dynamic will return Int64 for int
+                    if (primaryKeyValue is int ival)
+                    {
+                        if(data.Any(t => ((int)GetFieldValue(t, _idField)) == ival))
+                        {
+                            return data.Max(t => (int)GetFieldValue(t, _idField)) + 1;
+                        }
+                    }
+
+                    if (Guid.TryParse(primaryKeyValue, out Guid value))
+                    {
+                        if (value != Guid.Empty && data.All(t => Guid.Parse(GetFieldValue(t, _idField)) != value))
+                        {
+                            return value;
+                        }
+                        else
+                        {
+                            return Guid.NewGuid();
+                        }
+                    }
+
+                    return primaryKeyValue;
+                }
+            }
             if (!data.Any())
             {
-                if (item != null)
-                {
-                    dynamic primaryKeyValue = GetFieldValue(item, _idField);
-
-                    if (primaryKeyValue != null)
-                    {
-                        // Without casting dynamic will return Int64 for int
-                        if (primaryKeyValue is Int64)
-                            return (int)primaryKeyValue;
-
-                        return primaryKeyValue;
-                    }
-                }
-
                 return ObjectExtensions.GetDefaultValue<T>(_idField);
             }
-
-            var lastItem = data.Last();
-
-            dynamic keyValue = GetFieldValue(lastItem, _idField);
-
-            if (keyValue == null)
-                return null;
-
-            if (keyValue is Int64)
-                return (int)keyValue + 1;
-
-            return ParseNextIntegertToKeyValue(keyValue.ToString());
+            else
+            {
+                return ParseNextIntegertToKeyValue(data.Max(t =>GetFieldValue(t, _idField).ToString()));
+            }
         }
 
         private dynamic GetFieldValue(T item, string fieldName)
         {
-            var expando = JsonConvert.DeserializeObject<ExpandoObject>(JsonConvert.SerializeObject(item), new ExpandoObjectConverter());
+            var expando = JsonConvert.DeserializeObject<ExpandoObject>(JsonConvert.SerializeObject(item, _serializerSettings), new ExpandoObjectConverter());
             // Problem here is if we have typed data with upper camel case properties but lower camel case in JSON, so need to use OrdinalIgnoreCase string comparer
             var expandoAsIgnoreCase = new Dictionary<string, dynamic>(expando, StringComparer.OrdinalIgnoreCase);
 
